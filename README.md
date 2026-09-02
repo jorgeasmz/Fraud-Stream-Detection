@@ -108,6 +108,74 @@ scenario-2 fraud averages 0.612 against 0.005 for legitimate traffic, and adding
 the twelve risk columns takes scenario-2 recall to 0.664 and p@100 from 0.286 to
 0.620.
 
+## Streaming
+
+Transactions and resolved labels travel on one Redis stream, read by one consumer
+group. Their relative order carries meaning: a label describes a transaction the
+scorer has already judged, and a risk window may only contain outcomes that had
+resolved by the time the transaction it describes arrived. Two streams read in one
+call are ordered per stream, not by time, so a batch could hand a consumer a label
+before the transaction it belongs to.
+
+```mermaid
+flowchart LR
+    P["Replay<br/>transaction at t, label at t+7d"] --> S["events stream"]
+    S --> C["consumer group"]
+    C --> W["Window state<br/>packed per entity"]
+    C --> M["Detector"]
+    M --> A["alerts stream"]
+```
+
+The consumer reads the windows, scores, and only then records the transaction, so
+a transaction is never part of the history it is judged against. That ordering is
+the streaming half of the prior-only property the batch path gets from
+`closed="left"`, and `tests/test_parity.py` asserts the two produce the same
+eighteen numbers over a replayed sequence, and the same twelve risk numbers over a
+sequence with its labels released on the delay.
+
+The alert threshold is a quantile rather than a probability. A review team is a
+rate, so training writes the score above which the expected alert rate equals the
+daily budget: 0.016430 over the 91 training days.
+
+Replaying one simulated day of the held-out period against warm state produces 120
+alerts, of which 63 are fraudulent. That sits between the offline p@100 of 0.620
+and the p@200 of 0.329, which is what a budget of 120 should give.
+
+| | |
+|---|---:|
+| Events replayed | 18,918 |
+| Alerts | 120 |
+| Precision on those alerts | 0.525 |
+| Per-event latency p50 | 1.72 ms |
+| Per-event latency p95 | 2.26 ms |
+
+The same replay against an empty Redis produces 37 alerts. A consumer that starts
+cold scores its first transactions against no history, which is a property of the
+restart and not of the traffic, so the state that precedes a replay is loaded
+before it begins.
+
+## Window state
+
+A window is one packed binary string per entity: four bytes of timestamp and four
+of amount for a transaction, four and one for an outcome. A sorted set expresses
+the same window and costs 33.4 bytes an entry against 8.
+
+| | Sorted sets | Packed strings |
+|---|---:|---:|
+| Redis resident | 33.22 MB | **11.91 MB** |
+| Window and risk keys | 29.4 MB | **9.59 MB** |
+| Load of 288,163 transactions and 287,618 labels | 107 s | **1.1 s** |
+
+The 25 MB a free key-value instance offers is what makes the encoding a decision
+rather than a preference. The loading time is a separate result: the packed form
+is built once per entity and written in one command, where the sorted set was
+filled a transaction at a time.
+
+Reading is unaffected by the change, since both paths already read the whole
+window. A customer holds a median of 61 entries over thirty days and a terminal 28,
+so the window a scorer parses is small enough that filtering it in process costs
+less than asking Redis for a range.
+
 ## Running it
 
 ```bash
@@ -122,12 +190,23 @@ Ingestion takes about 20 seconds and caches the day files, so a repeated run
 downloads nothing. The comparison takes about 70 seconds, most of it the two
 isolation forests scoring 813,843 rows.
 
+The streaming path needs Redis and the fitted detector.
+
+```bash
+docker compose up -d
+python -m detect.train          # writes the model and its threshold
+python -m stream.warmup         # loads the state preceding the replay
+
+python -m stream.consumer &     # scores and emits alerts
+python -m stream.producer --days 1
+```
+
 ## Development
 
 ```bash
 pip install -r requirements-dev.txt
 
-pytest              # 28 tests
+pytest              # 48 tests
 ruff check .
 ```
 
@@ -146,10 +225,18 @@ Fraud-Stream-Detection/
 ├── features/
 │   ├── config.py         # The feature contract shared by every path
 │   ├── offline.py        # Label-free windows, computed in batch
-│   └── risk.py           # Windows over past labels, ending before the delay
+│   ├── online.py         # The same windows, computed from packed Redis state
+│   └── risk.py           # Windows over past labels, ending before the delay    # The same windows, computed from packed Redis state
 ├── detect/
 │   ├── config.py         # Model settings
-│   └── detectors.py      # Baselines, isolation forest and the supervised model
+│   ├── detectors.py      # Baselines, isolation forest and the supervised model
+│   └── train.py          # Fits the served model and its alert threshold
+├── stream/
+│   ├── config.py         # Stream names, consumer group and replay rate
+│   ├── events.py         # The wire format
+│   ├── producer.py       # Replays transactions and releases labels on the delay
+│   ├── consumer.py       # Consumer group, scoring and the alert stream
+│   └── warmup.py         # Bulk load of the state preceding a replay
 ├── evaluation/
 │   ├── config.py         # Review budget
 │   ├── metrics.py        # Precision at k, card precision, recall per scenario
