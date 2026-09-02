@@ -273,6 +273,59 @@ python -m stream.producer --days 1
 uvicorn api.main:app --port 8000
 ```
 
+## Deployment
+
+| Component | Host |
+|---|---|
+| API, scorer and replay | Render |
+| Alert queue and replay corpus | Neon, PostgreSQL |
+| Window state and event stream | Render Key Value |
+| Detector | Hugging Face model repository |
+| Panel | Vercel |
+
+The free plan gives one service, so the scorer and the replay run as threads beside
+the API. `RUN_CONSUMER` and `RUN_REPLAY` select that shape, and the same code runs
+as separate processes locally.
+
+Neither the corpus nor the detector is in the repository. A free instance has no
+persistent disk, so the 103 MB of day files a local run downloads would be fetched
+again on every restart. The rows a replay and its warm-up need are loaded into
+PostgreSQL once, and the fitted detector is published as a model repository whose
+card is generated from the run that produced it, so the documented metrics and the
+recorded fit cannot diverge.
+
+| | |
+|---|---:|
+| Replay slice | 421,807 rows, 46 MB |
+| Detector | 71 KB |
+| Slice read and warm state | 2.7 s |
+| Resident | 304 MB |
+| Peak | 326 MB |
+
+The slice is read in pieces of 25,000 rows. The frame it produces holds 13 MB, and
+materialising it in one query costs 456 MB while it is built, which alone exceeds
+what the plan allows. Streaming it holds the transient to 187 MB and is no slower.
+
+Memory is flat through a replay. The peak is the startup, and scoring adds nothing
+to it: a window is a packed string of at most a few hundred bytes, read whole and
+filtered in process, so no request allocates in proportion to the corpus.
+
+The serving install carries neither the parquet reader nor the downloader, since
+the deployment reads its slice from PostgreSQL and never touches a file. That is
+485 MB against 641 MB, and the split is what `requirements-offline.txt` names.
+
+```bash
+# Once, against the target database.
+alembic upgrade head
+python -m tools.publish_corpus --start 2018-07-08 --days 7
+
+# Once, after fitting.
+python -m detect.publish
+```
+
+The detector is a pickle and executes on load. The model repository is the trust
+boundary, and `MODEL_REPO` should name one the deployment controls.
+
 ## Development
 
 ```bash
@@ -304,7 +357,8 @@ Fraud-Stream-Detection/
 ├── ingest/
 │   ├── config.py         # Source, cache paths and the period split
 │   ├── download.py       # Day files, cached and resumable
-│   └── prepare.py        # Day files to one time-ordered table
+│   ├── prepare.py        # Day files to one time-ordered table
+│   └── source.py         # The replay slice, from the file or the database
 ├── features/
 │   ├── config.py         # The feature contract shared by every path
 │   ├── offline.py        # Label-free windows, computed in batch
@@ -313,7 +367,9 @@ Fraud-Stream-Detection/
 ├── detect/
 │   ├── config.py         # Model settings
 │   ├── detectors.py      # Baselines, isolation forest and the supervised model
-│   └── train.py          # Fits the served model and its alert threshold
+│   ├── train.py          # Fits the served model and its alert threshold
+│   ├── artifact.py       # Local export, or the model repository
+│   └── publish.py        # Uploads the fit with a card built from it
 ├── stream/
 │   ├── config.py         # Stream names, consumer group and replay rate
 │   ├── events.py         # The wire format
@@ -332,6 +388,8 @@ Fraud-Stream-Detection/
 │   ├── alerts.py         # Reading and writing the queue
 │   └── session.py        # One engine for the process
 ├── alembic/              # Migrations
+├── tools/
+│   └── publish_corpus.py # Loads the replay slice into PostgreSQL
 ├── web/
 │   ├── app/page.tsx      # The panel, its socket and the summary poll
 │   ├── components/       # Summary cards and the alert table

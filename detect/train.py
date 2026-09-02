@@ -12,6 +12,7 @@ import pandas as pd
 from detect.config import ARTIFACT_DIR
 from detect.detectors import GradientBoostingDetector
 from evaluation.config import DAILY_BUDGET
+from evaluation.metrics import card_precision_at_k, daily_precision_at_k, scenario_recall
 from features.config import FEATURE_COLUMNS
 from features.offline import build_features, split_periods
 from features.risk import build_risk_features, risk_columns
@@ -47,11 +48,26 @@ def train() -> dict:
 
     scores = detector.score(features[is_train])
     days = table.loc[is_train, "tx_datetime"].dt.date.nunique()
+
+    # The held-out figures are recorded beside the model, so the card that documents
+    # it and the run that produced it cannot drift apart.
+    _, is_test = split_periods(table, TRAIN_END, TEST_START)
+    scored = table.loc[is_test, ["tx_datetime", "customer_id", "is_fraud", "scenario"]].assign(
+        score=detector.score(features[is_test])
+    )
     decision = {
         "threshold": alert_threshold(scores, days),
         "daily_budget": DAILY_BUDGET,
         "training_days": days,
         "training_rows": int(is_train.sum()),
+        "held_out_rows": int(is_test.sum()),
+        "held_out_days": int(scored["tx_datetime"].dt.date.nunique()),
+        "card_precision_at_budget": round(card_precision_at_k(scored, DAILY_BUDGET), 4),
+        "precision_at_budget": round(daily_precision_at_k(scored, DAILY_BUDGET), 4),
+        "scenario_recall": {
+            str(scenario): round(value, 4)
+            for scenario, value in scenario_recall(scored, DAILY_BUDGET).items()
+        },
         "columns": SERVED_COLUMNS,
     }
 

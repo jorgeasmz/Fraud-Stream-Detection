@@ -45,3 +45,24 @@ class Alert(Base):
         Index("ix_alerts_id_desc", id.desc()),
         Index("ix_alerts_tx_datetime", tx_datetime),
     )
+
+
+class Transaction(Base):
+    """The slice of the corpus a deployment replays.
+
+    A free instance has no persistent disk, so the file the local runs read would
+    be fetched again on every restart. The rows the replay and its warm-up need
+    are held here instead, which is the same store the alerts already use.
+    """
+
+    __tablename__ = "transactions"
+
+    transaction_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    tx_datetime: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    customer_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    terminal_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    amount: Mapped[float] = mapped_column(Float, nullable=False)
+    is_fraud: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    scenario: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+
+    __table_args__ = (Index("ix_transactions_tx_datetime", tx_datetime),)

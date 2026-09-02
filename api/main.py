@@ -44,19 +44,16 @@ def _run_consumer() -> None:
 
 
 def _run_replay() -> None:
-    from ingest.prepare import load_table
+    from ingest.source import replay_slice
     from stream.producer import replay, timeline
     from stream.warmup import warm
 
     client = Redis.from_url(REDIS_URL)
-    table = load_table()
     start = pd.Timestamp(REPLAY_START)
+    table = replay_slice(start, REPLAY_DAYS)
 
     warm(client, table, start)
-    window = table[
-        (table.tx_datetime >= start) & (table.tx_datetime < start + pd.Timedelta(days=REPLAY_DAYS))
-    ]
-    replay(client, timeline(window))
+    replay(client, timeline(table[table.tx_datetime >= start]))
 
 
 @asynccontextmanager
