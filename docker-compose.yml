@@ -4,3 +4,18 @@ services:
     ports:
       - "6379:6379"
     command: ["redis-server", "--save", "", "--appendonly", "no"]
+
+  db:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: fraud
+      POSTGRES_PASSWORD: fraud
+      POSTGRES_DB: fraud
+    ports:
+      - "5434:5432"
+    volumes:
+      # Postgres 18 places its data in a subdirectory of this mount.
+      - pgdata:/var/lib/postgresql
+
+volumes:
+  pgdata:

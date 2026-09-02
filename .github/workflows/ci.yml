@@ -8,6 +8,22 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: fraud
+          POSTGRES_PASSWORD: fraud
+          POSTGRES_DB: fraud
+        ports:
+          - 5434:5432
+        options: >-
+          --health-cmd "pg_isready -U fraud"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
@@ -17,3 +33,7 @@ jobs:
       - run: pip install -r requirements-dev.txt
       - run: ruff check .
       - run: pytest
+      # The schema declares indexes and a unique constraint the offline suite cannot
+      # exercise, so the migration is applied and the dialect-specific tests run.
+      - run: alembic upgrade head
+      - run: pytest -m postgres --no-cov

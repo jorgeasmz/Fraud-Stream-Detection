@@ -6,6 +6,7 @@ import argparse
 import json
 import logging
 import time
+from collections.abc import Sequence
 
 import numpy as np
 from redis import Redis
@@ -14,8 +15,6 @@ from redis.exceptions import ResponseError
 from detect.train import DECISION_PATH, MODEL_PATH
 from features.online import RiskStore, WindowStore
 from stream.config import (
-    ALERT_MAXLEN,
-    ALERT_STREAM,
     BLOCK_MS,
     CONSUMER_GROUP,
     EVENT_STREAM,
@@ -25,6 +24,7 @@ from stream.config import (
     REDIS_URL,
 )
 from stream.events import decode_event, read_label, read_transaction
+from stream.sinks import AlertSink, DatabaseAlertSink, RedisAlertSink
 
 log = logging.getLogger(__name__)
 
@@ -83,10 +83,6 @@ class Scorer:
             "scenario": event.get("scenario", "0"),
         }
 
-    def publish(self, alert: dict) -> None:
-        self.client.xadd(ALERT_STREAM, alert, maxlen=ALERT_MAXLEN, approximate=True)
-
-
 def load_scorer(client: Redis) -> Scorer:
     import joblib
 
@@ -94,7 +90,13 @@ def load_scorer(client: Redis) -> Scorer:
     return Scorer(client, joblib.load(MODEL_PATH), decision["threshold"], decision["columns"])
 
 
-def consume(client: Redis, scorer: Scorer, consumer: str, once: bool = False) -> int:
+def consume(
+    client: Redis,
+    scorer: Scorer,
+    consumer: str,
+    sinks: Sequence[AlertSink] = (),
+    once: bool = False,
+) -> int:
     ensure_group(client)
     handled = 0
 
@@ -110,8 +112,10 @@ def consume(client: Redis, scorer: Scorer, consumer: str, once: bool = False) ->
         for _, messages in batches:
             for message_id, raw in messages:
                 alert = scorer.handle(decode_event(raw))
-                if alert:
-                    scorer.publish(alert)
+                for sink in sinks if alert else ():
+                    sink(alert)
+                # Acknowledged after the sinks, so a crash mid-write redelivers the
+                # message rather than losing the alert.
                 client.xack(EVENT_STREAM, CONSUMER_GROUP, message_id)
                 handled += 1
 
@@ -122,12 +126,17 @@ def consume(client: Redis, scorer: Scorer, consumer: str, once: bool = False) ->
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--name", default="scorer-1")
+    parser.add_argument("--no-persist", action="store_true", help="skip the database sink")
     args = parser.parse_args()
 
     # Binary responses, since the packed window state shares this connection.
     client = Redis.from_url(REDIS_URL)
+    sinks: list[AlertSink] = [RedisAlertSink(client)]
+    if not args.no_persist:
+        sinks.append(DatabaseAlertSink())
+
     log.info("consuming %s as %s", EVENT_STREAM, args.name)
-    consume(client, load_scorer(client), args.name)
+    consume(client, load_scorer(client), args.name, sinks)
 
 
 if __name__ == "__main__":
