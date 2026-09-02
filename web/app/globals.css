@@ -1,0 +1,151 @@
+:root {
+  --bg: #0b0f14;
+  --panel: #121821;
+  --line: #1f2937;
+  --text: #e5e7eb;
+  --muted: #8b98a9;
+  --accent: #5cb3d9;
+  --hit: #6ba368;
+  --miss: #a8737a;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+main {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 2.5rem 1.25rem 4rem;
+}
+
+h1 {
+  font-size: 1.4rem;
+  font-weight: 600;
+  margin: 0;
+}
+
+.lede {
+  color: var(--muted);
+  margin: 0.4rem 0 0;
+  max-width: 62ch;
+}
+
+.status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--miss);
+}
+
+.dot.on {
+  background: var(--hit);
+}
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 0.75rem;
+  margin: 1.75rem 0;
+}
+
+.card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0.9rem 1rem;
+}
+
+.card dt {
+  color: var(--muted);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: 0;
+}
+
+.card dd {
+  margin: 0.35rem 0 0;
+  font-size: 1.35rem;
+  font-variant-numeric: tabular-nums;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+caption {
+  text-align: left;
+  color: var(--muted);
+  padding-bottom: 0.6rem;
+}
+
+th,
+td {
+  text-align: right;
+  padding: 0.5rem 0.6rem;
+  border-bottom: 1px solid var(--line);
+}
+
+th:first-child,
+td:first-child,
+th:last-child,
+td:last-child {
+  text-align: left;
+}
+
+th {
+  color: var(--muted);
+  font-weight: 500;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.tag {
+  display: inline-block;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  border: 1px solid var(--line);
+  color: var(--muted);
+}
+
+.tag.hit {
+  color: var(--hit);
+  border-color: color-mix(in srgb, var(--hit) 45%, transparent);
+}
+
+.tag.miss {
+  color: var(--miss);
+  border-color: color-mix(in srgb, var(--miss) 45%, transparent);
+}
+
+.empty {
+  color: var(--muted);
+  padding: 2rem 0;
+}
+
+.note {
+  color: var(--muted);
+  font-size: 0.82rem;
+  margin-top: 1.5rem;
+  max-width: 72ch;
+}

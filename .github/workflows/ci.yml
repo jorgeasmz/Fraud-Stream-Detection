@@ -37,3 +37,22 @@ jobs:
       # exercise, so the migration is applied and the dialect-specific tests run.
       - run: alembic upgrade head
       - run: pytest -m postgres --no-cov
+
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
