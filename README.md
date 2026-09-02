@@ -221,6 +221,31 @@ The free tier gives one service, so the scorer runs in a thread beside the API a
 the same code runs as separate processes locally. `RUN_CONSUMER` and `RUN_REPLAY`
 are what select the shape.
 
+## Client
+
+A Next.js panel over the same two endpoints and the socket. The backlog is fetched
+once and the socket carries what arrives after it, which is the division the
+endpoints already draw.
+
+The queue returns numbers and the stream returns strings, since Redis fields are
+text. Both are read into one shape before anything renders, and a test asserts the
+two produce the same alert, so the table never branches on where a row came from.
+
+An arriving alert is merged by transaction rather than appended. A consumer group
+delivers at least once, and a redelivery would otherwise show the same alert twice.
+
+A closed socket is reopened rather than reported. A free instance sleeps, so a
+disconnection is the normal state of an idle demo and not a fault to surface.
+
+```bash
+cd web
+npm install
+NEXT_PUBLIC_API_URL=http://localhost:8000 npm run dev
+```
+
+The socket URL is derived from that origin and its scheme is raised with it: a page
+served over https cannot open a `ws://` socket, so `https` becomes `wss`.
+
 ## Running it
 
 ```bash
@@ -269,6 +294,9 @@ Three tests are held back because they depend on PostgreSQL rather than on SQL: 
 insert that ignores a redelivered alert is written in the dialect that has it. CI
 applies the migration and runs them against a service container.
 
+The client carries thirteen tests over the shape conversion, the socket URL and the
+feed merge, and CI runs them alongside its lint, type check and build.
+
 ## Project structure
 
 ```text
@@ -304,6 +332,10 @@ Fraud-Stream-Detection/
 │   ├── alerts.py         # Reading and writing the queue
 │   └── session.py        # One engine for the process
 ├── alembic/              # Migrations
+├── web/
+│   ├── app/page.tsx      # The panel, its socket and the summary poll
+│   ├── components/       # Summary cards and the alert table
+│   └── lib/              # Shape conversion, socket URL and the feed merge
 ├── evaluation/
 │   ├── config.py         # Review budget
 │   ├── metrics.py        # Precision at k, card precision, recall per scenario
