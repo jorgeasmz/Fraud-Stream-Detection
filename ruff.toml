@@ -1,0 +1,15 @@
+# Explicit lint contract: without it, "ruff check" means whatever the
+# installed version defaults to, and CI breaks on unrelated ruff releases.
+line-length = 100
+exclude = ["venv", ".venv", "alembic/versions"]
+
+[lint]
+select = [
+    "E4",  # pycodestyle: imports
+    "E7",  # pycodestyle: statements
+    "E9",  # pycodestyle: runtime errors
+    "F",   # pyflakes: dead imports, undefined names
+    "I",   # isort: import ordering
+    "B",   # flake8-bugbear: likely bugs
+    "UP",  # pyupgrade: outdated idioms
+]
