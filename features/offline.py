@@ -42,13 +42,16 @@ def build_features(table: pd.DataFrame) -> pd.DataFrame:
             features[column] = windows[column].astype("float32")
 
     for days in WINDOWS:
+        # Without prior history the deviation is undefined; the count column is what
+        # tells the detector that, so the ratio reads zero rather than raw.
+        has_history = features[f"customer_count_{days}d"] > 0
         mean = features[f"customer_mean_{days}d"]
-        features[f"amount_over_customer_mean_{days}d"] = (
-            features["amount"] / (mean + AMOUNT_FLOOR)
-        ).astype("float32")
+        ratio = features["amount"] / (mean + AMOUNT_FLOOR)
+        features[f"amount_over_customer_mean_{days}d"] = ratio.where(has_history, 0.0).astype(
+            "float32"
+        )
 
-    # An entity with no prior history has no mean and no ratio; both read as zero,
-    # which the count column already distinguishes from a genuine zero.
+    # An empty window leaves the count and the mean as NaN, and both read as zero.
     features = features.fillna(0.0)
     return features[FEATURE_COLUMNS]
 
