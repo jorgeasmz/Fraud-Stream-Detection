@@ -176,6 +176,51 @@ window. A customer holds a median of 61 entries over thirty days and a terminal 
 so the window a scorer parses is small enough that filtering it in process costs
 less than asking Redis for a range.
 
+## Alert queue
+
+An alert is persisted as one row per transaction placed above the operating point.
+A consumer group delivers at least once, so the insert ignores a transaction
+already in the queue, and the acknowledgement happens after the write: a crash
+between the two redelivers the message rather than dropping the alert.
+
+The outcome column is the resolved label. A replay knows it because the corpus
+carries it, and a live deployment fills it when the dispute resolves, which is why
+it is nullable rather than part of the insert.
+
+Paging is by cursor on the identifier rather than by offset. The queue grows while
+it is read, and an offset page skips or repeats rows as it does.
+
+## Endpoints
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /alerts` | The queue, newest first, paged by cursor |
+| `GET /stats` | Volume, precision over resolved alerts, latency and the scenario split |
+| `WS /live` | Alerts as they are raised |
+
+The socket reads from the end of the alert stream, so it carries what arrives while
+it is open, and the backlog is what `GET /alerts` is for. Latency percentiles are
+read over the recent tail rather than the whole table, since the panel reports a
+session and not the lifetime of the queue.
+
+One replayed day of the held-out period, through the API:
+
+```json
+{
+  "alerts": 120, "resolved": 120, "frauds": 63, "precision": 0.525,
+  "latency_p50_ms": 1.74, "latency_p95_ms": 2.59,
+  "by_scenario": {"0": 57, "1": 6, "2": 28, "3": 29}
+}
+```
+
+Fifty-seven of the 120 are false alarms, and the 63 that are not divide into 28
+compromised terminals, 29 compromised cards and 6 above the amount rule. Scenario 2
+is what the delayed labels buy: no label-free detector reaches it.
+
+The free tier gives one service, so the scorer runs in a thread beside the API and
+the same code runs as separate processes locally. `RUN_CONSUMER` and `RUN_REPLAY`
+are what select the shape.
+
 ## Running it
 
 ```bash
@@ -190,15 +235,17 @@ Ingestion takes about 20 seconds and caches the day files, so a repeated run
 downloads nothing. The comparison takes about 70 seconds, most of it the two
 isolation forests scoring 813,843 rows.
 
-The streaming path needs Redis and the fitted detector.
+The streaming path needs Redis, PostgreSQL and the fitted detector.
 
 ```bash
 docker compose up -d
+alembic upgrade head
 python -m detect.train          # writes the model and its threshold
 python -m stream.warmup         # loads the state preceding the replay
 
-python -m stream.consumer &     # scores and emits alerts
+python -m stream.consumer &     # scores, persists and emits alerts
 python -m stream.producer --days 1
+uvicorn api.main:app --port 8000
 ```
 
 ## Development
@@ -206,13 +253,21 @@ python -m stream.producer --days 1
 ```bash
 pip install -r requirements-dev.txt
 
-pytest              # 48 tests
+pytest                    # 67 tests, offline
+alembic upgrade head
+pytest -m postgres        # 3 more, against a live database
 ruff check .
 ```
 
-No test reaches the network or reads the corpus. The window tests assert the
-prior-only property on hand-built frames of two transactions, where the expected
-value is arithmetic rather than a recorded output.
+No test in the default run reaches the network, the corpus or a database. The
+window tests assert the prior-only property on hand-built frames of two
+transactions, where the expected value is arithmetic rather than a recorded output,
+and the endpoint tests run against an in-memory database through an injected
+session.
+
+Three tests are held back because they depend on PostgreSQL rather than on SQL: the
+insert that ignores a redelivered alert is written in the dialect that has it. CI
+applies the migration and runs them against a service container.
 
 ## Project structure
 
@@ -235,8 +290,20 @@ Fraud-Stream-Detection/
 │   ├── config.py         # Stream names, consumer group and replay rate
 │   ├── events.py         # The wire format
 │   ├── producer.py       # Replays transactions and releases labels on the delay
-│   ├── consumer.py       # Consumer group, scoring and the alert stream
+│   ├── consumer.py       # Consumer group and scoring
+│   ├── sinks.py          # Where a raised alert goes
 │   └── warmup.py         # Bulk load of the state preceding a replay
+├── api/
+│   ├── config.py         # Origins, and which workers this process runs
+│   ├── main.py           # The queue, the summary and the live socket
+│   ├── broadcast.py      # Alert stream to open sockets
+│   ├── deps.py           # Request-scoped session
+│   └── schemas.py        # Response models
+├── db/
+│   ├── models.py         # The alerts table
+│   ├── alerts.py         # Reading and writing the queue
+│   └── session.py        # One engine for the process
+├── alembic/              # Migrations
 ├── evaluation/
 │   ├── config.py         # Review budget
 │   ├── metrics.py        # Precision at k, card precision, recall per scenario

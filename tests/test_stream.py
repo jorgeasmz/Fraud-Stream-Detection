@@ -133,8 +133,19 @@ def test_consume_acknowledges_everything_it_reads(client):
     for index in range(3):
         client.xadd(EVENT_STREAM, transaction_event(row(transaction_id=index)))
 
-    handled = consume(client, scorer(client, 0.95, 0.90), "worker", once=True)
+    collected: list[dict] = []
+    handled = consume(client, scorer(client, 0.95, 0.90), "worker", [collected.append], once=True)
 
     assert handled == 3
     assert client.xpending(EVENT_STREAM, CONSUMER_GROUP)["pending"] == 0
-    assert client.xlen("alerts") == 3
+    assert [alert["transaction_id"] for alert in collected] == ["0", "1", "2"]
+
+
+def test_consume_writes_nothing_when_no_alert_is_raised(client):
+    ensure_group(client)
+    client.xadd(EVENT_STREAM, transaction_event(row()))
+
+    collected: list[dict] = []
+    consume(client, scorer(client, 0.10, 0.90), "worker", [collected.append], once=True)
+
+    assert collected == []

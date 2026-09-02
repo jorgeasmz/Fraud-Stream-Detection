@@ -18,3 +18,8 @@ def make_table(rows: list[tuple]) -> pd.DataFrame:
 @pytest.fixture
 def table_factory():
     return make_table
+
+
+@pytest.fixture
+def anyio_backend():
+    return "asyncio"
