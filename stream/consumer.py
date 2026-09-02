@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import json
 import logging
 import time
 from collections.abc import Sequence
@@ -12,7 +11,7 @@ import numpy as np
 from redis import Redis
 from redis.exceptions import ResponseError
 
-from detect.train import DECISION_PATH, MODEL_PATH
+from detect.artifact import resolve
 from features.online import RiskStore, WindowStore
 from stream.config import (
     BLOCK_MS,
@@ -86,8 +85,8 @@ class Scorer:
 def load_scorer(client: Redis) -> Scorer:
     import joblib
 
-    decision = json.loads(DECISION_PATH.read_text())
-    return Scorer(client, joblib.load(MODEL_PATH), decision["threshold"], decision["columns"])
+    path, decision = resolve()
+    return Scorer(client, joblib.load(path), decision["threshold"], decision["columns"])
 
 
 def consume(

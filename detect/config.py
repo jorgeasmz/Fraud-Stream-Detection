@@ -14,3 +14,13 @@ RANDOM_STATE = 42
 
 MAX_ITER = 300
 LEARNING_RATE = 0.1
+
+
+# The fitted detector is published as a model repository rather than committed, so
+# its version moves independently of the code that serves it.
+MODEL_REPO = os.getenv("MODEL_REPO", "jorgeasmz/fraud-stream-detector")
+MODEL_FILE = "detector.joblib"
+DECISION_FILE = "decision.json"
+
+# A local export takes precedence, so a fresh fit can be served before it is published.
+LOCAL_ARTIFACTS = os.getenv("LOCAL_ARTIFACTS", "")

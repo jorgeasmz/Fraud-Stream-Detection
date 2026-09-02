@@ -44,3 +44,28 @@ def test_the_quantile_reads_the_sorted_position():
     assert _quantile(values, 0.5) == 51.0
     assert _quantile(values, 0.95) == 96.0
     assert _quantile(values, 1.0) == 100.0
+
+
+def test_the_model_card_reports_the_recorded_run():
+    from detect.publish import build_card
+
+    card = build_card(
+        {
+            "threshold": 0.01643,
+            "daily_budget": 100,
+            "training_days": 91,
+            "training_rows": 872795,
+            "held_out_rows": 813843,
+            "held_out_days": 85,
+            "card_precision_at_budget": 0.5613,
+            "precision_at_budget": 0.6195,
+            "scenario_recall": {"1": 0.9161, "2": 0.6643, "3": 0.8191},
+            "columns": [f"f{index}" for index in range(30)],
+        }
+    )
+
+    assert "0.620" in card
+    assert "0.561" in card
+    assert "30 features per transaction" in card
+    # The compromised-terminal recall is quoted in the prose as well as the table.
+    assert card.count("0.664") == 2

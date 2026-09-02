@@ -1,0 +1,37 @@
+services:
+  - type: web
+    name: fraud-stream-detection
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    # The migration runs before the service, so a schema change ships with its code.
+    startCommand: alembic upgrade head && uvicorn api.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12"
+      # One instance holds the API, the scorer and the replay, because the free plan
+      # gives one service and a background worker is not part of it.
+      - key: RUN_CONSUMER
+        value: "1"
+      - key: RUN_REPLAY
+        value: "1"
+      - key: REPLAY_DAYS
+        value: "7"
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: fraud-stream-state
+          property: connectionString
+      - key: ALLOWED_ORIGINS
+        sync: false
+
+  - type: keyvalue
+    name: fraud-stream-state
+    plan: free
+    # The stream is a transport and the windows are rebuilt on start, so nothing
+    # here needs to survive a restart.
+    maxmemoryPolicy: noeviction
+    ipAllowList: []

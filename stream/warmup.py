@@ -24,7 +24,7 @@ from features.online import (
     window_key,
 )
 from features.risk import LABEL_DELAY_DAYS
-from ingest.prepare import load_table
+from ingest.source import replay_slice
 from stream.config import REDIS_URL
 
 log = logging.getLogger(__name__)
@@ -83,10 +83,12 @@ def warm(client: Redis, table: pd.DataFrame, start: pd.Timestamp) -> dict[str, i
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--start", default="2018-07-08")
+    parser.add_argument("--days", type=int, default=7)
     args = parser.parse_args()
 
+    start = pd.Timestamp(args.start)
     client = Redis.from_url(REDIS_URL)
-    counts = warm(client, load_table(), pd.Timestamp(args.start))
+    counts = warm(client, replay_slice(start, args.days), start)
     log.info("warmed %d transactions and %d labels", counts["windows"], counts["labels"])
 
 

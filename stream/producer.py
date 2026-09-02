@@ -10,7 +10,7 @@ import pandas as pd
 from redis import Redis
 
 from features.risk import LABEL_DELAY_DAYS
-from ingest.prepare import load_table
+from ingest.source import replay_slice
 from stream.config import EVENT_MAXLEN, EVENT_STREAM, REDIS_URL, REPLAY_SPEEDUP
 from stream.events import label_event, transaction_event
 
@@ -58,11 +58,9 @@ def main() -> None:
     parser.add_argument("--speedup", type=float, default=REPLAY_SPEEDUP)
     args = parser.parse_args()
 
-    table = load_table()
     first = pd.Timestamp(args.start) if args.start else pd.Timestamp("2018-07-08")
-    window = table[
-        (table.tx_datetime >= first) & (table.tx_datetime < first + pd.Timedelta(days=args.days))
-    ]
+    table = replay_slice(first, args.days)
+    window = table[table.tx_datetime >= first]
     log.info("replaying %d transactions from %s", len(window), first.date())
 
     client = Redis.from_url(REDIS_URL)
