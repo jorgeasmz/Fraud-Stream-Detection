@@ -48,7 +48,9 @@ jobs:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v6
         with:
-          node-version: "22"
+          # Read from .nvmrc, so CI resolves the dependency tree with the same npm
+          # that wrote the lock file. A different major rejects it as out of sync.
+          node-version-file: web/.nvmrc
           cache: npm
           cache-dependency-path: web/package-lock.json
       - run: npm ci
