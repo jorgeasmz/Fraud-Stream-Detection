@@ -41,6 +41,10 @@ def configure_logging() -> None:
         handler.setFormatter(logging.Formatter("%(levelname)s %(name)s %(message)s"))
         root.addHandler(handler)
     root.setLevel(LOG_LEVEL)
+    # These log a line per request at INFO, which buries the lines that carry
+    # information about this service.
+    for noisy in ("httpx", "httpcore", "urllib3"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
 
 
 configure_logging()
@@ -60,10 +64,14 @@ def _run_consumer() -> None:
 
 def _run_replay() -> None:
     from ingest.source import replay_slice
+    from stream.consumer import ensure_group
     from stream.producer import replay, timeline
     from stream.warmup import warm
 
     client = Redis.from_url(REDIS_URL)
+    # Created before the first event, so the producer can measure how far behind
+    # the consumer is from the start rather than racing it.
+    ensure_group(client)
     start = pd.Timestamp(REPLAY_START)
     table = replay_slice(start, REPLAY_DAYS)
 

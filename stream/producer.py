@@ -8,10 +8,19 @@ import time
 
 import pandas as pd
 from redis import Redis
+from redis.exceptions import ResponseError
 
 from features.risk import LABEL_DELAY_DAYS
 from ingest.source import replay_slice
-from stream.config import EVENT_MAXLEN, EVENT_STREAM, REDIS_URL, REPLAY_SPEEDUP
+from stream.config import (
+    BACKPRESSURE_POLL_S,
+    CONSUMER_GROUP,
+    EVENT_MAXLEN,
+    EVENT_STREAM,
+    MAX_BACKLOG,
+    REDIS_URL,
+    REPLAY_SPEEDUP,
+)
 from stream.events import label_event, transaction_event
 
 log = logging.getLogger(__name__)
@@ -31,14 +40,37 @@ def timeline(table: pd.DataFrame, delay_days: int = LABEL_DELAY_DAYS) -> list[tu
     return events
 
 
+def backlog(client: Redis, stream: str = EVENT_STREAM, group: str = CONSUMER_GROUP) -> int | None:
+    """Entries the consumer group has not read yet.
+
+    None means the figure is unavailable: the group may not exist yet, and Redis
+    reports the lag as unknown once entries have been trimmed or deleted. Reading
+    that as zero would turn the throttle off exactly when the stream is full.
+    """
+    try:
+        groups = client.xinfo_groups(stream)
+    except ResponseError:
+        return None
+
+    for info in groups:
+        name = info["name"]
+        if (name.decode() if isinstance(name, bytes) else name) != group:
+            continue
+        lag = info.get("lag")
+        return None if lag is None or lag < 0 else int(lag)
+    return None
+
+
 def replay(
     client: Redis,
     events: list[tuple[float, dict]],
     speedup: float = REPLAY_SPEEDUP,
     stream: str = EVENT_STREAM,
+    ceiling: int = MAX_BACKLOG,
 ) -> int:
     started = time.perf_counter()
     origin = events[0][0] if events else 0.0
+    stalled = 0.0
 
     log.info("replaying %d events at %.0fx", len(events), speedup)
     for moment, event in events:
@@ -47,8 +79,20 @@ def replay(
         behind = due - (time.perf_counter() - started)
         if behind > 0:
             time.sleep(behind)
+
+        # Slowing down is the only alternative to discarding, since the stream is
+        # capped and trimming would drop transactions that were never scored.
+        while True:
+            lag = backlog(client, stream)
+            if lag is None or lag <= ceiling:
+                break
+            time.sleep(BACKPRESSURE_POLL_S)
+            stalled += BACKPRESSURE_POLL_S
+
         client.xadd(stream, event, maxlen=EVENT_MAXLEN, approximate=True)
 
+    if stalled:
+        log.info("held back %.0fs waiting for the consumer", stalled)
     return len(events)
 
 

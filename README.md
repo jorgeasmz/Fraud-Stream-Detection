@@ -149,6 +149,25 @@ and the p@200 of 0.329, which is what a budget of 120 should give.
 | Per-event latency p50 | 1.72 ms |
 | Per-event latency p95 | 2.26 ms |
 
+The producer paces itself against the consumer rather than against the clock alone.
+It emits at a configured multiple of simulated time, and waits whenever the group
+has more than 5,000 entries it has not read. The stream is capped, so a producer
+that stays further ahead than the cap does not queue work, it discards it: the
+oldest unread entries are trimmed to make room for the newest.
+
+The rate that matters is not the one configured. Measured on the deployment, the
+consumer advances simulated time at about 250 times real time, against the 600 the
+producer was set to, because Redis and PostgreSQL are a network hop away there and
+are not on the same machine. With the throttle the configured figure becomes a
+ceiling and the replay runs at whatever the consumer sustains. Driven by a producer
+with no rate limit at all, it held back 41 seconds over 37,834 events and the group
+read every one of them.
+
+Lag is read from the consumer group, and Redis reports it as unknown once entries
+have been trimmed. That reads as no backlog if it is taken for zero, which would
+disable the throttle exactly when the stream is full, so it is treated as unknown
+and the producer does not throttle on a figure it does not have.
+
 The same replay against an empty Redis produces 37 alerts. A consumer that starts
 cold scores its first transactions against no history, which is a property of the
 restart and not of the traffic, so the state that precedes a replay is loaded
