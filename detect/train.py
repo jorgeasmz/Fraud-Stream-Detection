@@ -55,13 +55,21 @@ def train() -> dict:
     scored = table.loc[is_test, ["tx_datetime", "customer_id", "is_fraud", "scenario"]].assign(
         score=detector.score(features[is_test])
     )
+    threshold = alert_threshold(scores, days)
+    # What the operating point actually emits on later data, which is not what
+    # ranking a finished day gives and is the figure the deployment reaches.
+    fired = scored[scored["score"] >= threshold]
+    held_out_days = int(scored["tx_datetime"].dt.date.nunique())
+
     decision = {
-        "threshold": alert_threshold(scores, days),
+        "threshold": threshold,
         "daily_budget": DAILY_BUDGET,
         "training_days": days,
         "training_rows": int(is_train.sum()),
         "held_out_rows": int(is_test.sum()),
-        "held_out_days": int(scored["tx_datetime"].dt.date.nunique()),
+        "held_out_days": held_out_days,
+        "alerts_per_day_at_threshold": round(len(fired) / held_out_days, 1),
+        "precision_at_threshold": round(float(fired["is_fraud"].mean()), 4),
         "card_precision_at_budget": round(card_precision_at_k(scored, DAILY_BUDGET), 4),
         "precision_at_budget": round(daily_precision_at_k(scored, DAILY_BUDGET), 4),
         "scenario_recall": {

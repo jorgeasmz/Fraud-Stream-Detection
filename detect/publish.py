@@ -51,17 +51,29 @@ budget of {daily_budget} alerts a day.
 
 | Metric | Value |
 |---|---:|
-| Precision at the budget | {precision_at_budget:.3f} |
-| Card precision at the budget | {card_precision_at_budget:.3f} |
+| Precision at the operating point | {precision_at_threshold:.3f} |
+| Alerts a day at the operating point | {alerts_per_day_at_threshold:.0f} |
+| Precision ranking each day, top {daily_budget} | {precision_at_budget:.3f} |
+| Card precision ranking each day | {card_precision_at_budget:.3f} |
 {scenario_rows}
 
 Each fraud pattern is reachable through a different family of features, so recall
 per pattern says which signal the detector is using rather than reporting one
 aggregate.
 
-Precision at the budget is measured per day and averaged. Card precision counts a
-card once however many of its transactions were flagged, since a team investigates
-cards rather than transactions.
+The first row is what a deployment reaches. The last two rank each completed day and
+take its best {daily_budget}, which is an offline view: a service decides on a
+transaction when it arrives, without the rest of the day to compare it against.
+Reporting only the ranked figure overstates the served result by
+{overstatement:.3f}.
+
+The operating point also emits {alerts_per_day_at_threshold:.0f} alerts a day rather
+than {daily_budget}. It is a quantile of the training scores, and the score
+distribution moves over the following months, which is what an operating point set
+once and never revisited does.
+
+Card precision counts a card once however many of its transactions were flagged,
+since a team investigates cards rather than transactions.
 
 Accuracy is not reported. At a fraud rate below one percent it is a measure of the
 base rate, and a detector that flags nothing scores above 0.99 on it.
@@ -108,6 +120,7 @@ def build_card(decision: dict) -> str:
     )
     return CARD.format(
         scenario_rows=rows,
+        overstatement=decision["precision_at_budget"] - decision["precision_at_threshold"],
         feature_count=len(decision["columns"]),
         decision_file=DECISION_FILE,
         windows=", ".join(str(days) for days in WINDOWS),

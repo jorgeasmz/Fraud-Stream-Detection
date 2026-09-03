@@ -91,6 +91,23 @@ transaction precision counts them as three hits.
 | `supervised`, label-free features | ✓ | 0.226 | 0.946 | 0.540 | 0.286 | 0.148 | 0.982 | 0.007 | 0.878 |
 | **`supervised`, with delayed risk** | ✓ | **0.561** | **0.972** | **0.900** | **0.620** | **0.329** | 0.916 | **0.664** | 0.819 |
 
+Those figures rank each completed day and take its best hundred, which a service
+cannot do: it decides on a transaction when it arrives, with no view of the rest of
+the day. What it can do is compare the score against a fixed operating point, and
+that is measured separately.
+
+| | Alerts a day | Precision |
+|---|---:|---:|
+| Ranking each finished day, top 100 | 100 | 0.620 |
+| **Fixed operating point** | **120** | **0.532** |
+
+Reporting only the ranked figure overstates the served result by 0.088. The
+operating point also overshoots its budget: it is a quantile of the training
+scores, and the score distribution moves over the following months, so the same
+threshold emits between 94 and 146 alerts a day with a median of 119. An operating
+point set once and never revisited drifts, and both numbers are recorded beside
+the model rather than left to be discovered in production.
+
 `amount` ranks by the amount alone, which is the rule a fraud team writes first.
 It recovers scenario 1 completely, since the simulator places every scenario-1
 fraud above a threshold no legitimate transaction reaches.
@@ -221,6 +238,10 @@ The socket reads from the end of the alert stream, so it carries what arrives wh
 it is open, and the backlog is what `GET /alerts` is for. Latency percentiles are
 read over the recent tail rather than the whole table, since the panel reports a
 session and not the lifetime of the queue.
+
+The deployment reaches what the fixed operating point predicts. Over the first
+days of a replay it reported 517 alerts at 0.474, against the 0.532 the same
+threshold gives across the whole held-out period.
 
 One replayed day of the held-out period, through the API:
 
