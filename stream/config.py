@@ -23,5 +23,11 @@ BLOCK_MS = int(os.getenv("BLOCK_MS", "2000"))
 # Simulated seconds per real second during a replay.
 REPLAY_SPEEDUP = float(os.getenv("REPLAY_SPEEDUP", "3600"))
 
+# How far the producer may run ahead of the consumer group. The stream is capped,
+# so without this a producer faster than its consumer does not queue work, it
+# destroys it: the oldest unread entries are trimmed to make room.
+MAX_BACKLOG = int(os.getenv("MAX_BACKLOG", "5000"))
+BACKPRESSURE_POLL_S = float(os.getenv("BACKPRESSURE_POLL_S", "0.2"))
+
 KIND_TRANSACTION = "tx"
 KIND_LABEL = "label"

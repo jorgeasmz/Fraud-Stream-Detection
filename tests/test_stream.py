@@ -149,3 +149,63 @@ def test_consume_writes_nothing_when_no_alert_is_raised(client):
     consume(client, scorer(client, 0.10, 0.90), "worker", [collected.append], once=True)
 
     assert collected == []
+
+
+def test_the_backlog_is_unknown_before_a_group_exists(client):
+    from stream.producer import backlog
+
+    assert backlog(client) is None
+
+
+def test_an_unknown_lag_is_not_read_as_no_backlog(client):
+    from stream.producer import backlog
+
+    ensure_group(client)
+
+    # Redis reports the lag as unknown after a trim, and so does a fresh group here.
+    assert backlog(client) is None
+
+
+def test_the_backlog_counts_what_the_group_has_not_read(client):
+    from stream.producer import backlog
+
+    ensure_group(client)
+    for index in range(3):
+        client.xadd(EVENT_STREAM, transaction_event(row(transaction_id=index)))
+
+    # The exact figure is Redis bookkeeping and the double is off by one on it;
+    # what the producer relies on is that unread entries register and drain.
+    assert backlog(client) > 0
+
+    consume(client, scorer(client, 0.1, 0.9), "worker", once=True)
+
+    assert backlog(client) == 0
+
+
+def test_the_producer_waits_rather_than_overrunning_the_consumer(client, monkeypatch):
+    from stream import producer
+
+    ensure_group(client)
+    lags = iter([9_000, 9_000, 0])
+    monkeypatch.setattr(producer, "backlog", lambda *a, **k: next(lags, 0))
+    slept: list[float] = []
+    monkeypatch.setattr(producer.time, "sleep", slept.append)
+
+    producer.replay(client, [(0.0, transaction_event(row()))], speedup=1e9, ceiling=5_000)
+
+    # Two polls above the ceiling, then the event goes out.
+    assert slept.count(producer.BACKPRESSURE_POLL_S) == 2
+    assert client.xlen(EVENT_STREAM) == 1
+
+
+def test_the_producer_does_not_wait_when_the_consumer_keeps_up(client, monkeypatch):
+    from stream import producer
+
+    ensure_group(client)
+    monkeypatch.setattr(producer, "backlog", lambda *a, **k: 0)
+    slept: list[float] = []
+    monkeypatch.setattr(producer.time, "sleep", slept.append)
+
+    producer.replay(client, [(0.0, transaction_event(row()))], speedup=1e9)
+
+    assert producer.BACKPRESSURE_POLL_S not in slept
