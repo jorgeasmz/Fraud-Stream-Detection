@@ -18,6 +18,11 @@ services:
         value: "1"
       - key: REPLAY_DAYS
         value: "7"
+      # 600 simulated seconds a second stretches the seven days over seventeen
+      # minutes, so a visitor who wakes the instance watches alerts arrive rather
+      # than finding a queue that already finished filling.
+      - key: REPLAY_SPEEDUP
+        value: "600"
       - key: DATABASE_URL
         sync: false
       - key: REDIS_URL
