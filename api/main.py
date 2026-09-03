@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 from api.broadcast import Broadcaster
 from api.config import (
     ALLOWED_ORIGINS,
+    LOG_LEVEL,
     MAX_PAGE_LIMIT,
     PAGE_LIMIT,
     REPLAY_DAYS,
@@ -29,6 +30,20 @@ from db.alerts import recent, summary
 from stream.config import REDIS_URL
 
 log = logging.getLogger(__name__)
+
+
+def configure_logging() -> None:
+    """Uvicorn configures its own loggers and leaves the root one without a handler,
+    so every startup line a module writes would otherwise go nowhere."""
+    root = logging.getLogger()
+    if not root.handlers:
+        handler = logging.StreamHandler()
+        handler.setFormatter(logging.Formatter("%(levelname)s %(name)s %(message)s"))
+        root.addHandler(handler)
+    root.setLevel(LOG_LEVEL)
+
+
+configure_logging()
 
 broadcaster = Broadcaster()
 
@@ -56,14 +71,25 @@ def _run_replay() -> None:
     replay(client, timeline(table[table.tx_datetime >= start]))
 
 
+def _supervised(work) -> None:
+    """A worker thread that dies silently leaves the API serving a queue that has
+    stopped filling, so its failure is reported rather than swallowed."""
+    try:
+        work()
+    except Exception:
+        log.exception("%s stopped", work.__name__)
+    else:
+        log.info("%s finished", work.__name__)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await broadcaster.start()
     workers = []
     if RUN_CONSUMER:
-        workers.append(threading.Thread(target=_run_consumer, daemon=True))
+        workers.append(threading.Thread(target=_supervised, args=(_run_consumer,), daemon=True))
     if RUN_REPLAY:
-        workers.append(threading.Thread(target=_run_replay, daemon=True))
+        workers.append(threading.Thread(target=_supervised, args=(_run_replay,), daemon=True))
     for worker in workers:
         worker.start()
     try:

@@ -77,7 +77,9 @@ def warm(client: Redis, table: pd.DataFrame, start: pd.Timestamp) -> dict[str, i
         _write(client, _packed(history, entity, "amount", WINDOW_RECORD), LONGEST_WINDOW_SECONDS)
         _write(client, _packed(resolved, entity, "is_fraud", RISK_RECORD), risk_ttl)
 
-    return {"windows": len(history), "labels": len(resolved)}
+    counts = {"windows": len(history), "labels": len(resolved)}
+    log.info("warmed %d transactions and %d labels", counts["windows"], counts["labels"])
+    return counts
 
 
 def main() -> None:
@@ -88,8 +90,7 @@ def main() -> None:
 
     start = pd.Timestamp(args.start)
     client = Redis.from_url(REDIS_URL)
-    counts = warm(client, replay_slice(start, args.days), start)
-    log.info("warmed %d transactions and %d labels", counts["windows"], counts["labels"])
+    warm(client, replay_slice(start, args.days), start)
 
 
 if __name__ == "__main__":

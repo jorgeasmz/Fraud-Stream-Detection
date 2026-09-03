@@ -140,3 +140,29 @@ def test_a_browser_from_an_allowed_origin_is_answered(client):
 
     assert response.status_code == 200
     assert response.headers["access-control-allow-origin"] == "http://localhost:3000"
+
+
+def test_the_root_logger_gains_a_handler(monkeypatch):
+    import logging
+
+    from api.main import configure_logging
+
+    root = logging.getLogger()
+    monkeypatch.setattr(root, "handlers", [])
+
+    configure_logging()
+
+    assert root.handlers
+
+
+def test_a_failing_worker_is_reported_rather_than_swallowed(caplog):
+    from api.main import _supervised
+
+    def _run_consumer():
+        raise RuntimeError("redis went away")
+
+    with caplog.at_level("ERROR"):
+        _supervised(_run_consumer)
+
+    assert "_run_consumer stopped" in caplog.text
+    assert "redis went away" in caplog.text

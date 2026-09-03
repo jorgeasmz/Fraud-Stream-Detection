@@ -40,6 +40,7 @@ def replay(
     started = time.perf_counter()
     origin = events[0][0] if events else 0.0
 
+    log.info("replaying %d events at %.0fx", len(events), speedup)
     for moment, event in events:
         # Simulated time runs `speedup` times faster than the wall clock.
         due = (moment - origin) / speedup
