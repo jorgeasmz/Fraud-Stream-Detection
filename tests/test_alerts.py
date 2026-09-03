@@ -59,13 +59,19 @@ def test_the_model_card_reports_the_recorded_run():
             "held_out_days": 85,
             "card_precision_at_budget": 0.5613,
             "precision_at_budget": 0.6195,
+            "alerts_per_day_at_threshold": 120.1,
+            "precision_at_threshold": 0.5319,
             "scenario_recall": {"1": 0.9161, "2": 0.6643, "3": 0.8191},
             "columns": [f"f{index}" for index in range(30)],
         }
     )
 
+    assert "0.532" in card
     assert "0.620" in card
     assert "0.561" in card
+    # The gap between the served figure and the ranked one is stated, not left
+    # for the reader to subtract.
+    assert "0.088" in card
     assert "30 features per transaction" in card
     # The compromised-terminal recall is quoted in the prose as well as the table.
     assert card.count("0.664") == 2
