@@ -25,8 +25,8 @@ jobs:
           --health-retries 10
 
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: pip
@@ -45,8 +45,8 @@ jobs:
         working-directory: web
 
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           # Read from .nvmrc, so CI resolves the dependency tree with the same npm
           # that wrote the lock file. A different major rejects it as out of sync.

@@ -371,7 +371,7 @@ boundary, and `MODEL_REPO` should name one the deployment controls.
 ```bash
 pip install -r requirements-dev.txt
 
-pytest                    # 67 tests, offline
+pytest                    # 75 tests, offline
 alembic upgrade head
 pytest -m postgres        # 3 more, against a live database
 ruff check .
